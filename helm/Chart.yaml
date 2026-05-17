@@ -1,0 +1,5 @@
+apiVersion: v2
+name: cse474
+description: Microservices Helm chart for CSE474 PM3
+version: 1.0.0
+appVersion: "1.0.0"

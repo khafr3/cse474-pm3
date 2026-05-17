@@ -1,0 +1,86 @@
+version: '3.8'
+services:
+  postgres-comments:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: comments_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgcomments:/var/lib/postgresql/data
+
+  postgres-search:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: search_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgsearch:/var/lib/postgresql/data
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.4.0
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+    ports:
+      - "2181:2181"
+
+  kafka:
+    image: confluentinc/cp-kafka:7.4.0
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    ports:
+      - "9092:9092"
+
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    ports:
+      - "16686:16686"
+      - "14268:14268"
+      - "6831:6831/udp"
+
+  comments-service:
+    build: ./services/comments
+    ports:
+      - "4000:4000"
+    environment:
+      DB_HOST: postgres-comments
+      DB_USER: postgres
+      DB_PASSWORD: password
+      DB_NAME: comments_db
+      SEARCH_SERVICE_URL: http://search-index-service:4001
+      JAEGER_ENDPOINT: http://jaeger:14268/api/traces
+    depends_on:
+      - postgres-comments
+      - search-index-service
+      - jaeger
+
+  search-index-service:
+    build: ./services/search-index
+    ports:
+      - "4001:4001"
+    environment:
+      DB_HOST: postgres-search
+      DB_USER: postgres
+      DB_PASSWORD: password
+      DB_NAME: search_db
+      KAFKA_BROKERS: kafka:9092
+      JAEGER_ENDPOINT: http://jaeger:14268/api/traces
+    depends_on:
+      - postgres-search
+      - kafka
+      - jaeger
+
+volumes:
+  pgcomments:
+  pgsearch:

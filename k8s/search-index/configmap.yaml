@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: search-index-config
+  namespace: cse474-prod
+data:
+  DB_HOST: "postgres-search"
+  DB_USER: "postgres"
+  DB_NAME: "search_db"
+  DB_PORT: "5432"
+  KAFKA_BROKERS: "kafka:9092"

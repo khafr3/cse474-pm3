@@ -1,0 +1,25 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: main-ingress
+  namespace: cse474-prod
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  rules:
+    - http:
+        paths:
+          - path: /api/comments
+            pathType: Prefix
+            backend:
+              service:
+                name: comments-service
+                port:
+                  number: 4000
+          - path: /api/search
+            pathType: Prefix
+            backend:
+              service:
+                name: search-index-service
+                port:
+                  number: 4001

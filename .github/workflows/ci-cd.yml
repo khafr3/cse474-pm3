@@ -1,0 +1,158 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  REGISTRY: docker.io
+  COMMENTS_IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/comments-service
+  SEARCH_IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/search-index-service
+
+jobs:
+  # ─────────────────────────────────────────────────────────────
+  # COMMENTS SERVICE
+  # ─────────────────────────────────────────────────────────────
+  comments-ci:
+    name: Comments Service CI
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/comments
+
+    steps:
+      - name: 1. Checkout code
+        uses: actions/checkout@v4
+
+      - name: 2. Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: services/comments/package-lock.json
+
+      - name: 3. Install dependencies
+        run: npm ci
+
+      - name: 4. Lint
+        run: npx eslint src/ --ext .js --max-warnings=0 || true
+
+      - name: 5. Run tests with coverage
+        run: npm test -- --ci
+
+      - name: 6. Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: comments-coverage
+          path: services/comments/tests/coverage/
+
+      - name: 7. Build Docker image
+        run: docker build -t ${{ env.COMMENTS_IMAGE }}:${{ github.sha }} .
+
+      - name: 8. Login to DockerHub
+        if: github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: 9. Push Docker image
+        if: github.ref == 'refs/heads/main'
+        run: |
+          docker push ${{ env.COMMENTS_IMAGE }}:${{ github.sha }}
+          docker tag ${{ env.COMMENTS_IMAGE }}:${{ github.sha }} ${{ env.COMMENTS_IMAGE }}:latest
+          docker push ${{ env.COMMENTS_IMAGE }}:latest
+
+  # ─────────────────────────────────────────────────────────────
+  # SEARCH INDEX SERVICE
+  # ─────────────────────────────────────────────────────────────
+  search-ci:
+    name: Search Index Service CI
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: services/search-index
+
+    steps:
+      - name: 1. Checkout code
+        uses: actions/checkout@v4
+
+      - name: 2. Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: services/search-index/package-lock.json
+
+      - name: 3. Install dependencies
+        run: npm ci
+
+      - name: 4. Lint
+        run: npx eslint src/ --ext .js --max-warnings=0 || true
+
+      - name: 5. Run tests with coverage
+        run: npm test -- --ci
+
+      - name: 6. Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: search-coverage
+          path: services/search-index/tests/coverage/
+
+      - name: 7. Build Docker image
+        run: docker build -t ${{ env.SEARCH_IMAGE }}:${{ github.sha }} .
+
+      - name: 8. Login to DockerHub
+        if: github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: 9. Push Docker image
+        if: github.ref == 'refs/heads/main'
+        run: |
+          docker push ${{ env.SEARCH_IMAGE }}:${{ github.sha }}
+          docker tag ${{ env.SEARCH_IMAGE }}:${{ github.sha }} ${{ env.SEARCH_IMAGE }}:latest
+          docker push ${{ env.SEARCH_IMAGE }}:latest
+
+  # ─────────────────────────────────────────────────────────────
+  # DEPLOY (only on merge to main, after both CI jobs pass)
+  # ─────────────────────────────────────────────────────────────
+  deploy:
+    name: Deploy to Kubernetes
+    runs-on: ubuntu-latest
+    needs: [comments-ci, search-ci]
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: 1. Checkout code
+        uses: actions/checkout@v4
+
+      - name: 2. Setup kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'latest'
+
+      - name: 3. Configure kubeconfig
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBECONFIG }}" > ~/.kube/config
+
+      - name: 4. Deploy with Helm
+        run: |
+          helm upgrade --install cse474 ./helm \
+            --namespace cse474-prod \
+            --create-namespace \
+            --set commentsService.tag=${{ github.sha }} \
+            --set searchIndexService.tag=${{ github.sha }} \
+            --set commentsService.image=${{ env.COMMENTS_IMAGE }} \
+            --set searchIndexService.image=${{ env.SEARCH_IMAGE }} \
+            --wait --timeout 5m
+
+      - name: 5. Verify deployment
+        run: |
+          kubectl rollout status deployment/comments-service -n cse474-prod
+          kubectl rollout status deployment/search-index-service -n cse474-prod

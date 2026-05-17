@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: comments-config
+  namespace: cse474-prod
+data:
+  DB_HOST: "postgres-comments"
+  DB_USER: "postgres"
+  DB_NAME: "comments_db"
+  DB_PORT: "5432"
+  SEARCH_SERVICE_URL: "http://search-index-service:4001"

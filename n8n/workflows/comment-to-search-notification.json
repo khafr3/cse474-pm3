@@ -1,0 +1,75 @@
+{
+  "name": "Comment → Search Index → Log Notification",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "new-comment-webhook",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "name": "Webhook: New Comment",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "id": "node1"
+    },
+    {
+      "parameters": {
+        "url": "http://comments-service:4000/api/comments",
+        "method": "POST",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "file_id", "value": "={{ $json.file_id }}" },
+            { "name": "user_id", "value": "={{ $json.user_id }}" },
+            { "name": "text", "value": "={{ $json.text }}" }
+          ]
+        },
+        "options": {}
+      },
+      "name": "POST to Comments Service",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [450, 300],
+      "id": "node2"
+    },
+    {
+      "parameters": {
+        "url": "http://search-index-service:4001/api/search",
+        "method": "GET",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "q", "value": "={{ $json.text }}" }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Search Index Lookup",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [650, 300],
+      "id": "node3"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"workflow\": \"complete\", \"comment_id\": $node[\"POST to Comments Service\"].json.data.id, \"search_results\": $node[\"Search Index Lookup\"].json.data.length } }}"
+      },
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [850, 300],
+      "id": "node4"
+    }
+  ],
+  "connections": {
+    "Webhook: New Comment": { "main": [[{ "node": "POST to Comments Service", "type": "main", "index": 0 }]] },
+    "POST to Comments Service": { "main": [[{ "node": "Search Index Lookup", "type": "main", "index": 0 }]] },
+    "Search Index Lookup": { "main": [[{ "node": "Respond to Webhook", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": {},
+  "versionId": "1"
+}
